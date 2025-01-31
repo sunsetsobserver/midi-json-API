@@ -1,3 +1,4 @@
+import base64
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 import uvicorn
@@ -11,31 +12,21 @@ app = FastAPI(
 )
 
 @app.post("/convert-midi")
-async def convert_midi_base64(data: dict):
+async def convert_midi(data: dict):
     """
-    Accept a JSON payload:
-    {
-      "midi_base64": "<base64 string of the MIDI file>"
-    }
-    Return:
-    {
-      "notes": [
-        {"start": 0.0, "duration": 0.236, "pitch": 60, "velocity": 100},
-        ...
-      ]
-    }
+    Accepts JSON with base64-encoded MIDI and returns extracted note data.
     """
     midi_b64 = data.get("midi_base64", None)
     if not midi_b64:
         return JSONResponse({"error": "No base64 MIDI provided."}, status_code=400)
     
     try:
-        # Decode base64 -> raw MIDI bytes
+        # Decode the base64 MIDI string into raw bytes
         midi_bytes = base64.b64decode(midi_b64)
-        # Parse
+        # Parse the MIDI data
         midi_data = pretty_midi.PrettyMIDI(io.BytesIO(midi_bytes))
         
-        # Gather note info
+        # Extract note information
         notes_list = []
         for instrument in midi_data.instruments:
             for note in instrument.notes:
@@ -50,28 +41,19 @@ async def convert_midi_base64(data: dict):
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=400)
 
+
 @app.post("/generate-midi")
-async def generate_midi_base64(data: dict):
+async def generate_midi(data: dict):
     """
-    Accept a JSON payload:
-    {
-      "notes": [
-        {"start": 0.0, "duration": 0.236, "pitch": 60, "velocity": 100},
-        ...
-      ]
-    }
-    Return:
-    {
-      "midi_base64": "<base64 string of resulting MIDI>"
-    }
+    Accepts JSON with note events and returns a base64-encoded MIDI file.
     """
     notes = data.get("notes", [])
-    
-    # Create new MIDI
+
+    # Create a new MIDI object
     midi = pretty_midi.PrettyMIDI()
-    instrument = pretty_midi.Instrument(program=0)  # e.g. Acoustic Grand Piano
+    instrument = pretty_midi.Instrument(program=0)  # Acoustic Grand Piano
     
-    # Loop through notes
+    # Convert note data into MIDI notes
     for note_data in notes:
         start_time = float(note_data["start"])
         duration = float(note_data["duration"])
@@ -88,18 +70,16 @@ async def generate_midi_base64(data: dict):
     
     midi.instruments.append(instrument)
     
-    # Write to an in-memory buffer
+    # Write MIDI to in-memory buffer
     buffer = io.BytesIO()
     midi.write(buffer)
     buffer.seek(0)
     
-    # Base64-encode the buffer
+    # Convert MIDI to base64 string
     midi_b64 = base64.b64encode(buffer.read()).decode("utf-8")
     
     return JSONResponse({"midi_base64": midi_b64})
-
-
-
+   
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
