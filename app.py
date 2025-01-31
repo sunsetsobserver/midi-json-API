@@ -35,7 +35,6 @@ async def convert_midi(file: UploadFile = File(...)):
     # 4. Return JSON response
     return JSONResponse({"notes": notes_list})
 
-
 @app.post("/generate-midi")
 async def generate_midi(data: dict):
     """
@@ -52,9 +51,10 @@ async def generate_midi(data: dict):
     
     # 1. Create a new MIDI object
     midi = pretty_midi.PrettyMIDI()
-    instrument = pretty_midi.Instrument(program=0)  # Acoustic Grand Piano
+    # 2. Add an instrument (channel=0, e.g., Acoustic Grand Piano)
+    instrument = pretty_midi.Instrument(program=0)
     
-    # 2. Convert note data into pretty_midi.Note objects
+    # 3. Convert note data into pretty_midi.Note objects
     for n in notes:
         start_time = float(n["start"])
         duration = float(n["duration"])
@@ -69,15 +69,15 @@ async def generate_midi(data: dict):
         )
         instrument.notes.append(note)
     
-    # 3. Add the instrument to the MIDI object
+    # 4. Attach the instrument to the MIDI object
     midi.instruments.append(instrument)
     
-    # 4. Write the MIDI to an in-memory buffer
+    # 5. Write the MIDI to an in-memory buffer
     midi_buffer = io.BytesIO()
     midi.write(midi_buffer)
     midi_buffer.seek(0)
     
-    # 5. Return MIDI file as a downloadable response
+    # 6. Return MIDI file as a downloadable response
     headers = {
         "Content-Disposition": "attachment; filename=generated.mid"
     }
@@ -90,3 +90,4 @@ async def generate_midi(data: dict):
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
