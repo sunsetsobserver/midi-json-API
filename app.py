@@ -11,35 +11,13 @@ app = FastAPI(
 )
 
 @app.post("/convert-midi")
-async def convert_midi(file: UploadFile = File(...)):
+async def convert_midi_base64(data: dict):
     """
-    Convert an uploaded MIDI file into a JSON structure describing note events.
-    """
-    # 1. Read file contents into memory
-    midi_bytes = await file.read()
-    
-    # 2. Parse MIDI from bytes
-    midi_data = pretty_midi.PrettyMIDI(io.BytesIO(midi_bytes))
-    
-    # 3. Collect notes (start, duration, pitch, velocity)
-    notes_list = []
-    for instrument in midi_data.instruments:
-        for note in instrument.notes:
-            notes_list.append({
-                "start": round(note.start, 3),
-                "duration": round(note.end - note.start, 3),
-                "pitch": note.pitch,
-                "velocity": note.velocity
-            })
-    
-    # 4. Return JSON response
-    return JSONResponse({"notes": notes_list})
-
-@app.post("/generate-midi")
-async def generate_midi(data: dict):
-    """
-    Accept JSON with note events and return a generated MIDI file.
-    The JSON structure should look like:
+    Accept a JSON payload:
+    {
+      "midi_base64": "<base64 string of the MIDI file>"
+    }
+    Return:
     {
       "notes": [
         {"start": 0.0, "duration": 0.236, "pitch": 60, "velocity": 100},
@@ -47,19 +25,58 @@ async def generate_midi(data: dict):
       ]
     }
     """
+    midi_b64 = data.get("midi_base64", None)
+    if not midi_b64:
+        return JSONResponse({"error": "No base64 MIDI provided."}, status_code=400)
+    
+    try:
+        # Decode base64 -> raw MIDI bytes
+        midi_bytes = base64.b64decode(midi_b64)
+        # Parse
+        midi_data = pretty_midi.PrettyMIDI(io.BytesIO(midi_bytes))
+        
+        # Gather note info
+        notes_list = []
+        for instrument in midi_data.instruments:
+            for note in instrument.notes:
+                notes_list.append({
+                    "start": round(note.start, 3),
+                    "duration": round(note.end - note.start, 3),
+                    "pitch": note.pitch,
+                    "velocity": note.velocity
+                })
+        
+        return JSONResponse({"notes": notes_list})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+@app.post("/generate-midi")
+async def generate_midi_base64(data: dict):
+    """
+    Accept a JSON payload:
+    {
+      "notes": [
+        {"start": 0.0, "duration": 0.236, "pitch": 60, "velocity": 100},
+        ...
+      ]
+    }
+    Return:
+    {
+      "midi_base64": "<base64 string of resulting MIDI>"
+    }
+    """
     notes = data.get("notes", [])
     
-    # 1. Create a new MIDI object
+    # Create new MIDI
     midi = pretty_midi.PrettyMIDI()
-    # 2. Add an instrument (channel=0, e.g., Acoustic Grand Piano)
-    instrument = pretty_midi.Instrument(program=0)
+    instrument = pretty_midi.Instrument(program=0)  # e.g. Acoustic Grand Piano
     
-    # 3. Convert note data into pretty_midi.Note objects
-    for n in notes:
-        start_time = float(n["start"])
-        duration = float(n["duration"])
-        pitch = int(n["pitch"])
-        velocity = int(n["velocity"])
+    # Loop through notes
+    for note_data in notes:
+        start_time = float(note_data["start"])
+        duration = float(note_data["duration"])
+        pitch = int(note_data["pitch"])
+        velocity = int(note_data["velocity"])
         
         note = pretty_midi.Note(
             velocity=velocity,
@@ -69,23 +86,18 @@ async def generate_midi(data: dict):
         )
         instrument.notes.append(note)
     
-    # 4. Attach the instrument to the MIDI object
     midi.instruments.append(instrument)
     
-    # 5. Write the MIDI to an in-memory buffer
-    midi_buffer = io.BytesIO()
-    midi.write(midi_buffer)
-    midi_buffer.seek(0)
+    # Write to an in-memory buffer
+    buffer = io.BytesIO()
+    midi.write(buffer)
+    buffer.seek(0)
     
-    # 6. Return MIDI file as a downloadable response
-    headers = {
-        "Content-Disposition": "attachment; filename=generated.mid"
-    }
-    return StreamingResponse(
-        midi_buffer,
-        media_type="audio/midi",
-        headers=headers
-    )
+    # Base64-encode the buffer
+    midi_b64 = base64.b64encode(buffer.read()).decode("utf-8")
+    
+    return JSONResponse({"midi_base64": midi_b64})
+
 
 
 if __name__ == "__main__":
